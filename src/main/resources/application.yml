@@ -1,0 +1,74 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: msbackend
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/math_rush?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: 123456
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: 1000ms
+
+redis:
+  key:
+    prefix: "msbackend:"
+    expire: 3600
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    mapper-locations: classpath*:/com/example/msbackend/mapper/*.xml
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+  type-enums-package: com.example.msbackend.enums
+
+jwt:
+  secret: aB3$7xQ!9pL@2rK#5vG&1mN4eW8jZ  # 建议使用至少32位随机字符串
+  access-token-expire: 3600             # 1小时
+
+# Kaptcha 图形验证码配置
+kaptcha:
+  image:
+    width: 150
+    height: 50
+  textproducer:
+    char:
+      string: 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
+      length: 4
+    font:
+      names: Arial,Comic Sans MS
+      size: 40
+      color: black
+  background:
+    color:
+      from: white
+      to: white
+  noise:
+    color: black
+    impl: com.google.code.kaptcha.impl.NoNoise
+  border:
+    enabled: false
+    color: black
+    thickness: 1
