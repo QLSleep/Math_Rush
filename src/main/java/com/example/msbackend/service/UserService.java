@@ -13,5 +13,5 @@ public interface UserService {
 
 //  public Result<?> changePassword();
 
-//  public Result<?> changeAccount();
+  public Result<?> changeAccount();
 }

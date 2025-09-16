@@ -37,6 +37,17 @@ public class UserServiceImpl implements UserService {
   @Resource
   private RedisConfig redisConfig;
 
+  /**
+   * 用户注册服务
+   * <p>处理用户注册请求，包括参数验证、验证码校验、用户名/邮箱重复性检查、密码加密、用户创建以及角色关联等操作</p>
+   * 
+   * @param registerVO 注册请求参数对象，包含用户注册所需的各种信息
+   * @return 注册结果对象，包含成功或失败信息
+   *         <ul>
+   *           <li>成功：Result.success()</li>
+   *           <li>失败：Result.error(code, message)，具体错误码和信息根据失败原因而定</li>
+   *         </ul>
+   */
   @Override
   public Result<?> register(RegisterVO registerVO) {
     String email = registerVO.getEmail();
@@ -102,5 +113,10 @@ public class UserServiceImpl implements UserService {
     } else {
       return Result.error(ResultCode.FAIL.getCode(), "注册失败，请稍后重试");
     }
+  }
+
+  @Override
+  public Result<?> changeAccount() {
+    return null;
   }
 }
