@@ -1,6 +1,7 @@
 package com.example.msbackend.service;
 
 import com.example.msbackend.entity.Result;
+import com.example.msbackend.vo.ModifyUserInfoVO;
 import com.example.msbackend.vo.RegisterVO;
 
 public interface UserService {
@@ -13,5 +14,5 @@ public interface UserService {
 
 //  public Result<?> changePassword();
 
-  public Result<?> changeAccount();
+  Result<?> changeAccount(ModifyUserInfoVO modifyUserInfoVO);
 }

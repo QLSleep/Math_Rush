@@ -2,6 +2,7 @@ package com.example.msbackend.controller;
 
 import com.example.msbackend.entity.Result;
 import com.example.msbackend.service.UserService;
+import com.example.msbackend.vo.ModifyUserInfoVO;
 import com.example.msbackend.vo.RegisterVO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,5 +29,15 @@ public class UserController {
   @PostMapping("/register")
   public Result<?> register(@RequestBody RegisterVO registerVO) {
     return userService.register(registerVO);
+  }
+  
+  /**
+   * 更新用户账户信息接口
+   * @param modifyUserInfoVO 修改用户信息
+   * @return 更新结果
+   */
+  @PostMapping("/change-account")
+  public Result<?> changeAccount(@RequestBody ModifyUserInfoVO modifyUserInfoVO) {
+    return userService.changeAccount(modifyUserInfoVO);
   }
 }

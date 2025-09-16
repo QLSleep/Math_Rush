@@ -3,6 +3,7 @@ package com.example.msbackend.service.impl;
 import com.example.msbackend.config.RedisConfig;
 import com.example.msbackend.contant.AuthContant;
 import com.example.msbackend.dto.InsertUserDTO;
+import com.example.msbackend.dto.ModifyUserInfoDTO;
 import com.example.msbackend.entity.Result;
 import com.example.msbackend.enums.ResultCode;
 import com.example.msbackend.enums.RoleNames;
@@ -12,12 +13,11 @@ import com.example.msbackend.mapper.UserRoleMapper;
 import com.example.msbackend.service.UserService;
 import com.example.msbackend.utils.BCryptUtils;
 import com.example.msbackend.utils.RedisUtils;
+import com.example.msbackend.vo.ModifyUserInfoVO;
 import com.example.msbackend.vo.RegisterVO;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
-import java.util.Collections;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -115,8 +115,119 @@ public class UserServiceImpl implements UserService {
     }
   }
 
+  /**
+   * 修改用户账户信息
+   * <p>此方法用于更新用户的用户名和邮箱信息，支持单独修改用户名、单独修改邮箱或同时修改两者。
+   * 系统会执行一系列验证来确保数据的有效性和唯一性，然后通过用户ID进行精准更新。</p>
+   * 
+   * <h3>处理流程：</h3>
+   * <ol>
+   *   <li>验证请求参数是否为空</li>
+   *   <li>获取当前用户名、邮箱以及新的用户名、邮箱</li>
+   *   <li>验证当前用户名和邮箱是否为空</li>
+   *   <li>处理新用户名和新邮箱（去除空格和换行符）</li>
+   *   <li>判断是否有需要更新的内容</li>
+   *   <li>如果没有需要更新的内容，直接返回成功信息</li>
+   *   <li>检查用户是否存在并获取用户ID（通过用户名和邮箱）</li>
+   *   <li>检查新用户名是否已被其他用户使用（如果有修改用户名）</li>
+   *   <li>检查新邮箱是否已被其他用户使用（如果有修改邮箱）</li>
+   *   <li>封装更新信息到DTO对象中，执行数据库更新操作</li>
+   *   <li>根据更新结果返回成功或失败信息</li>
+   * </ol>
+   * 
+   * @param modifyUserInfoVO 修改用户信息的请求对象
+   *                         <ul>
+   *                           <li>username：当前用户名（必填）</li>
+   *                           <li>email：当前邮箱（必填）</li>
+   *                           <li>newUsername：新用户名（可选，可为空或不填）</li>
+   *                           <li>newEmail：新邮箱（可选，可为空或不填）</li>
+   *                         </ul>
+   * @return 修改结果对象，包含成功或失败信息
+   *         <ul>
+   *           <li>成功：code=0，message包含成功信息</li>
+   *           <li>失败：code>0，message包含具体错误信息</li>
+   *         </ul>
+   * @throws IllegalArgumentException 当请求参数不合法时抛出
+   */
   @Override
-  public Result<?> changeAccount() {
-    return null;
+  public Result<?> changeAccount(ModifyUserInfoVO modifyUserInfoVO) {
+    // 1. 验证请求参数是否为空
+    if (modifyUserInfoVO == null) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "请求参数不能为空");
+    }
+    
+    // 2. 获取参数
+    String currentUsername = modifyUserInfoVO.getUsername();
+    String currentEmail = modifyUserInfoVO.getEmail();
+    String newUsername = modifyUserInfoVO.getNewUsername();
+    String newEmail = modifyUserInfoVO.getNewEmail();
+    
+    // 3. 验证当前用户名和邮箱是否为空
+    if (!StringUtils.hasText(currentUsername) || !StringUtils.hasText(currentEmail)) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "当前用户名和邮箱不能为空");
+    }
+    
+    // 4. 去除新用户名和新邮箱的空格和换行符
+    String processedNewUsername = newUsername != null ? newUsername.trim() : null;
+    String processedNewEmail = newEmail != null ? newEmail.trim() : null;
+    
+    // 5. 判断是否有需要更新的内容
+    boolean needUpdate = false;
+    boolean hasUsernameChange = false;
+    boolean hasEmailChange = false;
+    
+    // 检查新用户名是否与当前用户名不同且不为空
+    if (processedNewUsername != null && !processedNewUsername.isEmpty() && !processedNewUsername.equals(currentUsername)) {
+      hasUsernameChange = true;
+      needUpdate = true;
+    }
+    
+    // 检查新邮箱是否与当前邮箱不同且不为空
+    if (processedNewEmail != null && !processedNewEmail.isEmpty() && !processedNewEmail.equals(currentEmail)) {
+      hasEmailChange = true;
+      needUpdate = true;
+    }
+    
+    // 6. 如果没有需要更新的内容，直接返回成功
+    if (!needUpdate) {
+      return Result.success("用户信息无需修改");
+    }
+    
+    // 7. 检查用户是否存在并获取用户ID
+    Long userId = userMapper.getUserByUsernameAndEmail(currentUsername, currentEmail);
+    if (userId == null) {
+      return Result.error(ResultCode.USER_NOT_EXIST.getCode(), "用户不存在");
+    }
+
+    // 8. 检查新用户名是否已被其他用户使用
+    if (hasUsernameChange) {
+      boolean usernameExists = userMapper.checkUsernameExistsExcludeCurrent(currentUsername, currentEmail, processedNewUsername);
+      if (usernameExists) {
+        return Result.error(ResultCode.USER_ALREADY_EXISTS.getCode(), "新用户名已被使用");
+      }
+    }
+
+    // 9. 检查新邮箱是否已被其他用户使用
+    if (hasEmailChange) {
+      boolean emailExists = userMapper.checkEmailExistsExcludeCurrent(currentUsername, currentEmail, processedNewEmail);
+      if (emailExists) {
+        return Result.error(ResultCode.USER_ALREADY_EXISTS.getCode(), "新邮箱已被使用");
+      }
+    }
+
+    // 10. 封装更新信息到DTO中，执行更新操作
+    ModifyUserInfoDTO modifyUserInfoDTO = new ModifyUserInfoDTO();
+    modifyUserInfoDTO.setId(userId);
+    modifyUserInfoDTO.setUsername(currentUsername);
+    modifyUserInfoDTO.setEmail(currentEmail);
+    modifyUserInfoDTO.setNewUsername(hasUsernameChange ? processedNewUsername : currentUsername);
+    modifyUserInfoDTO.setNewEmail(hasEmailChange ? processedNewEmail : currentEmail);
+    
+    boolean updateResult = userMapper.updateUserInfo(modifyUserInfoDTO);
+    if (updateResult) {
+      return Result.success("用户信息修改成功");
+    } else {
+      return Result.error(ResultCode.FAIL.getCode(), "用户信息修改失败，请稍后重试");
+    }
   }
 }

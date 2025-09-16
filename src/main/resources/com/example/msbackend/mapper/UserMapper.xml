@@ -57,4 +57,37 @@
         FROM sys_user
         WHERE username = #{username} OR email = #{email}
     </select>
+
+    <!-- 根据用户名和邮箱查询用户ID -->
+    <select id="getUserByUsernameAndEmail" resultType="java.lang.Long">
+        SELECT id
+        FROM sys_user
+        WHERE username = #{username} AND email = #{email}
+    </select>
+
+    <!-- 检查新用户名是否已被其他用户使用（排除当前用户） -->
+    <select id="checkUsernameExistsExcludeCurrent" resultType="java.lang.Boolean">
+        SELECT COUNT(*) > 0
+        FROM sys_user
+        WHERE username = #{newUsername}
+        AND NOT (username = #{currentUsername} AND email = #{currentEmail})
+    </select>
+
+    <!-- 检查新邮箱是否已被其他用户使用（排除当前用户） -->
+    <select id="checkEmailExistsExcludeCurrent" resultType="java.lang.Boolean">
+        SELECT COUNT(*) > 0
+        FROM sys_user
+        WHERE email = #{newEmail}
+        AND NOT (username = #{currentUsername} AND email = #{currentEmail})
+    </select>
+
+    <!-- 更新用户信息 -->
+    <update id="updateUserInfo">
+        UPDATE sys_user
+        SET 
+            username = #{newUsername},
+            email = #{newEmail},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
 </mapper>
