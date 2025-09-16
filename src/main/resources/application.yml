@@ -45,7 +45,7 @@ mybatis-plus:
   type-enums-package: com.example.msbackend.enums
 
 jwt:
-  secret: aB3$7xQ!9pL@2rK#5vG&1mN4eW8jZ  # 建议使用至少32位随机字符串
+  secret: aB3$7xQ!9pL@2rK#5vG&1mN4eW8jZxYz1@3!5$7  # 已更新为32位以上的安全随机字符串
   access-token-expire: 3600             # 1小时
 
 # Kaptcha 图形验证码配置
@@ -54,7 +54,7 @@ kaptcha:
     width: 150
     height: 50
   textproducer:
-    char:
+    char-props:
       string: 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
       length: 4
     font:

@@ -3,18 +3,58 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.example.msbackend.mapper.UserMapper">
-    <select id="getUserInfo" resultType="com.example.msbackend.dto.UserInfoDTO">
+    <!-- 定义UserInfoVO的结果映射 -->
+    <resultMap id="UserInfoVOMap" type="com.example.msbackend.vo.UserInfoVO">
+        <id property="id" column="id"/>
+        <result property="username" column="username"/>
+        <result property="email" column="email"/>
+        <result property="createdAt" column="createdAt"/>
+        <result property="updatedAt" column="updatedAt"/>
+        <collection property="roles" ofType="java.lang.String">
+            <constructor>
+                <arg column="role_name"/>
+            </constructor>
+        </collection>
+    </resultMap>
+    
+    <!-- 查询用户基本信息 -->
+    <select id="getUserInfo" resultMap="UserInfoVOMap">
         SELECT
             u.id,
             u.username,
             u.email,
             u.created_at AS createdAt,
             u.updated_at AS updatedAt,
-            GROUP_CONCAT(r.name) AS roles
+            r.name AS role_name
         FROM sys_user u
-                 LEFT JOIN sys_user_role ur ON u.id = ur.user_id
-                 LEFT JOIN sys_role r ON ur.role_id = r.id
+        LEFT JOIN sys_user_role ur ON u.id = ur.user_id
+        LEFT JOIN sys_role r ON ur.role_id = r.id
         WHERE u.username = #{username}
-        GROUP BY u.id
+    </select>
+
+    <insert id="insertUser" useGeneratedKeys="true" keyProperty="id">
+        <!-- 插入用户信息 -->
+        INSERT INTO sys_user (
+            username,
+            password,
+            email,
+            status,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{username},
+            #{password},
+            #{email},
+            1,  -- 默认为正常状态
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        )
+    </insert>
+    
+    <!-- 检查用户名或邮箱是否已存在 -->
+    <select id="checkUsernameOrEmailExists" resultType="java.lang.Boolean">
+        SELECT COUNT(*) > 0
+        FROM sys_user
+        WHERE username = #{username} OR email = #{email}
     </select>
 </mapper>

@@ -13,39 +13,90 @@ import java.util.Properties;
 @Configuration
 @ConfigurationProperties(prefix = "kaptcha")
 public class KaptchaConfig {
-  private int imageWidth;
-  private int imageHeight;
-  private String charString;
-  private int charLength;
-  private String fontNames;
-  private int fontSize;
-  private String fontColor;
-  private String backgroundColorFrom;
-  private String backgroundColorTo;
-  private String noiseColor;
-  private String noiseImpl;
-  private String border;
-  private String borderColor;
-  private int borderThickness;
+  private ImageProperties image;
+  private TextProducerProperties textproducer;
+  private BackgroundProperties background;
+  private NoiseProperties noise;
+  private BorderProperties border;
 
+  @Data
+  public static class ImageProperties {
+    private int width;
+    private int height;
+  }
+
+  @Data
+  public static class TextProducerProperties {
+    private CharProperties charProps;
+    private FontProperties font;
+  }
+
+  @Data
+  public static class CharProperties {
+    private String string;
+    private int length;
+  }
+
+  @Data
+  public static class FontProperties {
+    private String names;
+    private int size;
+    private String color;
+  }
+
+  @Data
+  public static class BackgroundProperties {
+    private ColorProperties color;
+  }
+
+  @Data
+  public static class ColorProperties {
+    private String from;
+    private String to;
+  }
+
+  @Data
+  public static class NoiseProperties {
+    private String color;
+    private String impl;
+  }
+
+  @Data
+  public static class BorderProperties {
+    private boolean enabled;
+    private String color;
+    private int thickness;
+  }
 
   @Bean
   public DefaultKaptcha kaptchaProducer() {
     Properties properties = new Properties();
-    properties.setProperty("kaptcha.image.width", String.valueOf(imageWidth));
-    properties.setProperty("kaptcha.image.height", String.valueOf(imageHeight));
-    properties.setProperty("kaptcha.textproducer.char.string", charString);
-    properties.setProperty("kaptcha.textproducer.char.length", String.valueOf(charLength));
-    properties.setProperty("kaptcha.textproducer.font.names", fontNames);
-    properties.setProperty("kaptcha.textproducer.font.size", String.valueOf(fontSize));
-    properties.setProperty("kaptcha.textproducer.font.color", fontColor);
-    properties.setProperty("kaptcha.background.color.from", backgroundColorFrom);
-    properties.setProperty("kaptcha.background.color.to", backgroundColorTo);
-    properties.setProperty("kaptcha.noise.color", noiseColor);
-    properties.setProperty("kaptcha.noise.impl", noiseImpl);
-    properties.setProperty("kaptcha.border", border);
-    properties.setProperty("kaptcha.border.color", borderColor);
-    properties.setProperty("kaptcha.border.thickness", String.valueOf(borderThickness));
+    if (image != null) {
+      properties.setProperty("kaptcha.image.width", String.valueOf(image.getWidth()));
+      properties.setProperty("kaptcha.image.height", String.valueOf(image.getHeight()));
+    }
+    if (textproducer != null && textproducer.getCharProps() != null) {
+      properties.setProperty("kaptcha.textproducer.char.string", textproducer.getCharProps().getString());
+      properties.setProperty("kaptcha.textproducer.char.length", String.valueOf(textproducer.getCharProps().getLength()));
+    }
+    if (textproducer != null && textproducer.getFont() != null) {
+      properties.setProperty("kaptcha.textproducer.font.names", textproducer.getFont().getNames());
+      properties.setProperty("kaptcha.textproducer.font.size", String.valueOf(textproducer.getFont().getSize()));
+      properties.setProperty("kaptcha.textproducer.font.color", textproducer.getFont().getColor());
+    }
+    if (background != null && background.getColor() != null) {
+      properties.setProperty("kaptcha.background.color.from", background.getColor().getFrom());
+      properties.setProperty("kaptcha.background.color.to", background.getColor().getTo());
+    }
+    if (noise != null) {
+      properties.setProperty("kaptcha.noise.color", noise.getColor());
+      properties.setProperty("kaptcha.noise.impl", noise.getImpl());
+    }
+    if (border != null) {
+      properties.setProperty("kaptcha.border", border.isEnabled() ? "yes" : "no");
+      properties.setProperty("kaptcha.border.color", border.getColor());
+      properties.setProperty("kaptcha.border.thickness", String.valueOf(border.getThickness()));
+    }
 
     DefaultKaptcha kaptcha = new DefaultKaptcha();
     kaptcha.setConfig(new Config(properties));

@@ -1,0 +1,36 @@
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.msbackend.mapper.RoleMapper">
+    
+    <!-- 根据角色名查询角色信息 -->
+    <select id="getRoleByName" resultType="com.example.msbackend.entity.Role">
+        SELECT
+            id,
+            name,
+            description
+        FROM sys_role
+        WHERE name = #{roleName.roleName}
+    </select>
+    
+    <!-- 批量查询角色信息 -->
+    <select id="getRolesByNames" resultType="com.example.msbackend.entity.Role">
+        SELECT
+            id,
+            name,
+            description
+        FROM sys_role
+        WHERE name IN
+        <foreach collection="roleNames" item="roleName" open="(" close=")" separator=",">
+            #{roleName.roleName}
+        </foreach>
+    </select>
+    
+    <!-- 根据角色名获取角色ID -->
+    <select id="getRoleIdByRoleName" resultType="java.lang.Integer">
+        SELECT
+            id
+        FROM sys_role
+        WHERE name = #{roleName}
+    </select>
+</mapper>

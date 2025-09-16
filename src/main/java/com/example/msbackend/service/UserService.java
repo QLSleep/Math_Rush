@@ -1,14 +1,17 @@
 package com.example.msbackend.service;
 
+import com.example.msbackend.entity.Result;
+import com.example.msbackend.vo.RegisterVO;
+
 public interface UserService {
 
-  public boolean register();
+  Result<?> register(RegisterVO registerVO);
 
-  public boolean forgetPassword();
+//  public Result<?> forgetPassword();
 
-  public boolean cancelAccount();
+//  public Result<?> cancelAccount();
 
-  public boolean changePassword();
+//  public Result<?> changePassword();
 
-  public boolean changeAccount();
+//  public Result<?> changeAccount();
 }

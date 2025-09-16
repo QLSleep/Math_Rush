@@ -8,14 +8,14 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @Component
-public class RedisUtil {
+public class RedisUtils {
 
   private final RedisTemplate<String, Object> redisTemplate;
 
   @Value("${redis.key.expire}")
   private Long defaultExpire; // 默认过期时间（从YML注入）
 
-  public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
+  public RedisUtils(RedisTemplate<String, Object> redisTemplate) {
     this.redisTemplate = redisTemplate;
   }
 

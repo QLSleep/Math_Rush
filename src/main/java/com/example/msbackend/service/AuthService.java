@@ -5,10 +5,12 @@ import com.example.msbackend.vo.LoginUserVO;
 
 public interface AuthService {
 
-  public Result<?> login(LoginUserVO user);
+  Result<?> login(LoginUserVO user);
 
-  public Result<?> logout(String accesstoken);
+  Result<?> logout(String accessToken);
 
-  public Result<?> refreshAccessToken(String refreshToken);
+  Result<?> refreshAccessToken(String refreshToken);
+
+  Result<?> generateCaptcha();
 
 }

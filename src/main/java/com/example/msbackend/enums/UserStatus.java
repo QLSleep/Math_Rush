@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 public enum UserStatus {
   NORMAL((byte) 1),
-  BANNED((byte) 2),;
+  BANNED((byte) 2);
 
   @EnumValue
   private final Byte code;

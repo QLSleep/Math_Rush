@@ -7,9 +7,10 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginUserVO {
-  String username;
-  String password;
-  String captcha;
-  String captchaId;
+public class RegisterVO {
+  private String email;
+  private String username;
+  private String password;
+  private String captcha;
+  private String captchaId;
 }

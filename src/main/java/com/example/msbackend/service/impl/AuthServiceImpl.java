@@ -3,22 +3,29 @@ package com.example.msbackend.service.impl;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.msbackend.config.RedisConfig;
-import com.example.msbackend.dto.UserInfoDTO;
 import com.example.msbackend.entity.Result;
 import com.example.msbackend.entity.User;
 import com.example.msbackend.enums.ResultCode;
+import com.example.msbackend.enums.RoleNames;
 import com.example.msbackend.mapper.UserMapper;
 import com.example.msbackend.service.AuthService;
 import com.example.msbackend.utils.BCryptUtils;
 import com.example.msbackend.utils.JwtUtils;
-import com.example.msbackend.utils.RedisUtil;
+import com.example.msbackend.utils.RedisUtils;
 import com.example.msbackend.vo.JWTUserVO;
 import com.example.msbackend.vo.LoginUserVO;
+import com.example.msbackend.vo.UserInfoVO;
+import com.google.code.kaptcha.impl.DefaultKaptcha;
 import io.jsonwebtoken.Claims;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -32,13 +39,16 @@ public class AuthServiceImpl implements AuthService {
   private RedisConfig redisConfig;
 
   @Resource
-  private RedisUtil redisUtil;
+  private RedisUtils redisUtils;
 
   @Resource
   private JwtUtils jwtUtils;
 
   @Resource
   private UserMapper userMapper;
+
+  @Resource
+  private DefaultKaptcha kaptchaProducer;
 
   /**
    * 用户登录服务方法
@@ -56,7 +66,7 @@ public class AuthServiceImpl implements AuthService {
    *   <li>refreshToken：[redis前缀]user:refresh:[refresh_jti]，存储refreshToken</li>
    *   <li>用户-refreshToken映射：[redis前缀]user:refresh:user:[用户ID]，存储jti，用于挤兑操作</li>
    * </ul>
-   * 
+   *
    * @param userVO 登录用户信息，包含用户名、密码和验证码
    * @return 登录结果，成功时包含accessToken、refreshToken和用户信息
    */
@@ -71,7 +81,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     String failCountKey = redisConfig.getRedisKeyPrefix() + "login:fail:" + username;
-    Long failCount = (Long) redisUtil.get(failCountKey);
+    Long failCount = (Long) redisUtils.get(failCountKey);
     if (failCount == null) {
       failCount = 0L; // 首次失败时初始化为0
     }
@@ -79,89 +89,98 @@ public class AuthServiceImpl implements AuthService {
 
     //验证码验证
     if (needCaptcha) {
-      if(!StringUtils.hasText(captcha)) {
+      if(!StringUtils.hasText(captcha) || !StringUtils.hasText(userVO.getCaptchaId())) {
         return Result.error(ResultCode.USER_LOGIN_FAIL_TOO_MANY);
       }
-      String captchaKey = redisConfig.getRedisKeyPrefix() + CAPTCHA_KEY_PREFIX + username;
-      String storedCaptcha = (String) redisUtil.get(captchaKey);
+      // 使用captchaId作为Redis键的一部分，与generateCaptcha方法保持一致
+      String captchaKey = redisConfig.getRedisKeyPrefix() + CAPTCHA_KEY_PREFIX + userVO.getCaptchaId();
+      String storedCaptcha = (String) redisUtils.get(captchaKey);
       if (!StringUtils.hasText(storedCaptcha) || !captcha.equalsIgnoreCase(storedCaptcha)) {
         return Result.error(ResultCode.USER_CAPTCHA_ERROR);
       }
+      // 验证成功后删除验证码
+      redisUtils.delKey(captchaKey);
     }
 
     //查询数据库
     User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
     if (user == null) {
-      redisUtil.set(failCountKey,failCount+1 ,LOGIN_FAIL_EXPIRE);
+      redisUtils.set(failCountKey,failCount+1 ,LOGIN_FAIL_EXPIRE);
       return Result.error(ResultCode.USERNAME_OR_PASSWORD_ERROR);
     }
     //校验密码
     if (!BCryptUtils.matches(userVO.getPassword(), user.getPassword())){
-      redisUtil.set(failCountKey,failCount+1 ,LOGIN_FAIL_EXPIRE);
+      redisUtils.set(failCountKey,failCount+1 ,LOGIN_FAIL_EXPIRE);
       return Result.error(ResultCode.USERNAME_OR_PASSWORD_ERROR);
     }
 
+    UserInfoVO userInfoVO = userMapper.getUserInfo(username);
+    
+    // 检查是否为管理员角色，管理员禁止登录普通用户页面
+    if (userInfoVO != null && userInfoVO.getRoles() != null && userInfoVO.getRoles().contains(RoleNames.ADMIN.getRoleName())) {
+      return Result.error(ResultCode.ADMIN_FORBIDDEN_LOGIN.getCode(), "管理员账号禁止登录普通用户页面");
+    }
+
     //登录成功，清理无效状态+生成token+存储登录状态
-    redisUtil.delKey(failCountKey);
-    redisUtil.delKey(redisConfig.getRedisKeyPrefix() + CAPTCHA_KEY_PREFIX + username);//清理验证码
+    redisUtils.delKey(failCountKey);
+    redisUtils.delKey(redisConfig.getRedisKeyPrefix() + CAPTCHA_KEY_PREFIX + username);//清理验证码
 
     //禁止重复登陆(新设备挤兑旧设备)
     String userLoginKey = redisConfig.getRedisKeyPrefix() + USER_LOGIN_KEY_PREFIX + user.getId();
-    String existingToken = (String) redisUtil.get(userLoginKey);
+    String existingToken = (String) redisUtils.get(userLoginKey);
     //如果账号已有设备登录，执行挤兑操作
     if (StringUtils.hasText(existingToken)) {
 //      return Result.error(ResultCode.USER_ALREADY_LOGGED_IN);
-      redisUtil.delKey(userLoginKey);
+      redisUtils.delKey(userLoginKey);
       
       // 删除旧的refreshToken
       // 首先获取用户对应的refreshToken键
       String userRefreshKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + "user:" + user.getId();
-      String oldRefreshJti = (String) redisUtil.get(userRefreshKey);
+      String oldRefreshJti = (String) redisUtils.get(userRefreshKey);
       
       // 如果存在旧的refreshToken，删除它
       if (StringUtils.hasText(oldRefreshJti)) {
         String oldRefreshKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + oldRefreshJti;
-        redisUtil.delKey(oldRefreshKey);
+        redisUtils.delKey(oldRefreshKey);
         // 同时删除用户到refreshToken的映射
-        redisUtil.delKey(userRefreshKey);
+        redisUtils.delKey(userRefreshKey);
       }
     }
 
     //生成jwt acctoken
-    UserInfoDTO userInfoDTO = userMapper.getUserInfo(username);
     JWTUserVO jwtUserVO = new JWTUserVO();
-    jwtUserVO.setUserId(userInfoDTO.getId());
-    jwtUserVO.setRoles(userInfoDTO.getRoles());
+    jwtUserVO.setUserId(userInfoVO.getId());
+    jwtUserVO.setRoles(userInfoVO.getRoles());
     String accessToken = jwtUtils.generateAccessToken(jwtUserVO);
 
     //存储登录相关信息至redis
     //存入已登录键
-    redisUtil.set(userLoginKey, accessToken);
+    redisUtils.set(userLoginKey, accessToken);
     //存入用户登录信息
     Map<String, Object> map = new HashMap<>();
-    map.put("id", userInfoDTO.getId());
-    map.put("username", userInfoDTO.getUsername());
-    map.put("email", userInfoDTO.getEmail());
-    map.put("createdAt", userInfoDTO.getCreatedAt().toString());
-    map.put("updatedAt", userInfoDTO.getUpdatedAt().toString());
-    map.put("roles", JSON.toJSONString(userInfoDTO.getRoles())); // List 序列化为 JSON 字符串
+    map.put("id", userInfoVO.getId());
+    map.put("username", userInfoVO.getUsername());
+    map.put("email", userInfoVO.getEmail());
+    map.put("createdAt", userInfoVO.getCreatedAt().toString());
+    map.put("updatedAt", userInfoVO.getUpdatedAt().toString());
+    map.put("roles", JSON.toJSONString(userInfoVO.getRoles())); // List 序列化为 JSON 字符串
     // 确保每个用户的登录信息存储在独立的键中
-    String userLoginInfoKey = USER_LOGIN_INFO_KEY_PREFIX + userInfoDTO.getId();
-    redisUtil.hset(userLoginInfoKey, map);
+    String userLoginInfoKey = USER_LOGIN_INFO_KEY_PREFIX + userInfoVO.getId();
+    redisUtils.hset(userLoginInfoKey, map);
     //存储refreshtoken
     String jti = "refresh_" + UUID.randomUUID();
     String refreshKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + jti;
-    redisUtil.set(refreshKey, user.getId(), 60*60*24*7); //时长为七天
+    redisUtils.set(refreshKey, user.getId(), 60*60*24*7); //时长为七天
     
     // 存储用户ID到refreshToken的映射，用于后续挤兑操作
     String userRefreshKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + "user:" + user.getId();
-    redisUtil.set(userRefreshKey, jti, 60*60*24*7); // 与refreshToken相同的过期时间
+    redisUtils.set(userRefreshKey, jti, 60*60*24*7); // 与refreshToken相同的过期时间
 
     //构造响应信息
     Map<String, Object> loginResult = new HashMap<>();
     loginResult.put("accessToken", accessToken);
     loginResult.put("refreshKey", refreshKey);
-    loginResult.put("userInfo", userInfoDTO);
+    loginResult.put("userInfo", userInfoVO);
 
     return Result.success("登录成功", loginResult);
   }
@@ -184,13 +203,13 @@ public class AuthServiceImpl implements AuthService {
    *   <li>用户-refreshToken映射：[redis前缀]user:refresh:user:[用户ID]</li>
    * </ul>
    * 
-   * @param accesstoken 用户的访问令牌
+   * @param accessToken 用户的访问令牌
    * @return 登出结果，成功时返回操作结果信息
    */
   @Override
-  public Result<?> logout(String accesstoken) {
+  public Result<?> logout(String accessToken) {
     // 解析accessToken获取用户ID
-    Claims claims = jwtUtils.parseAccessToken(accesstoken);
+    Claims claims = jwtUtils.parseAccessToken(accessToken);
     long userId = Long.parseLong(claims.getSubject());
     
     // 构建需要删除的Redis键
@@ -199,18 +218,71 @@ public class AuthServiceImpl implements AuthService {
     String userRefreshMapKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + "user:" + userId;
     
     // 获取并删除refreshToken
-    String oldRefreshJti = (String) redisUtil.get(userRefreshMapKey);
+    String oldRefreshJti = (String) redisUtils.get(userRefreshMapKey);
     if (StringUtils.hasText(oldRefreshJti)) {
       String oldRefreshKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + oldRefreshJti;
-      redisUtil.delKey(oldRefreshKey);
+      redisUtils.delKey(oldRefreshKey);
     }
     
     // 删除所有相关的登录状态信息
-    redisUtil.delKey(userLoginKey);
-    redisUtil.delKey(userLoginInfoKey);
-    redisUtil.delKey(userRefreshMapKey);
+    redisUtils.delKey(userLoginKey);
+    redisUtils.delKey(userLoginInfoKey);
+    redisUtils.delKey(userRefreshMapKey);
     
     return Result.success("登出成功");
+  }
+
+  /**
+   * 生成验证码服务方法
+   * <p>功能：生成验证码图片和文本，并存储到Redis中，用于后续验证</p>
+   * <p>验证码生成流程：</p>
+   * <ul>
+   *   <li>1. 使用Kaptcha生成随机验证码文本</li>
+   *   <li>2. 根据验证码文本生成对应的图片</li>
+   *   <li>3. 将图片转换为Base64编码字符串</li>
+   *   <li>4. 生成验证码ID（用于标识验证码）</li>
+   *   <li>5. 将验证码文本存储到Redis中，使用验证码ID作为键的一部分，设置5分钟过期</li>
+   *   <li>6. 返回验证码ID和Base64编码的图片</li>
+   * </ul>
+   * <p>Redis存储的键格式：[redis前缀]captcha:[captchaId]（通用格式，适用于登录和注册等所有验证码场景）</p>
+   * 
+   * @return 验证码生成结果，成功时包含验证码ID和Base64编码的图片
+   */
+  @Override
+  public Result<?> generateCaptcha() {
+    
+    try {
+      // 生成验证码文本
+      String captchaText = kaptchaProducer.createText();
+      // 生成验证码图片
+      BufferedImage captchaImage = kaptchaProducer.createImage(captchaText);
+      
+      // 将图片转换为Base64编码
+      ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+      ImageIO.write(captchaImage, "jpg", outputStream);
+      byte[] imageBytes = outputStream.toByteArray();
+      String base64Image = "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(imageBytes);
+      
+      // 生成验证码ID - 现在这个ID将用于Redis键，确保安全性和唯一性
+      String captchaId = UUID.randomUUID().toString();
+      
+      // 存储验证码到Redis，键格式：[redis前缀]login:captcha:[captchaId]
+      // 使用captchaId作为键的一部分，而不是用户名，提高安全性并支持统一验证
+      String captchaKey = redisConfig.getRedisKeyPrefix() + CAPTCHA_KEY_PREFIX + captchaId;
+      redisUtils.set(captchaKey, captchaText.toUpperCase(), 300); // 5分钟过期
+      
+      // 构建返回结果
+      Map<String, String> resultMap = new HashMap<>();
+      resultMap.put("captchaId", captchaId);
+      resultMap.put("captchaImage", base64Image);
+      
+      return Result.success("验证码生成成功", resultMap);
+    } catch (IOException e) {
+      // TODO: 引入日志框架替换System.err
+      System.err.println("验证码生成失败: " + e.getMessage());
+      e.printStackTrace();
+      return Result.error(ResultCode.SERVER_ERROR.getCode(), "验证码生成失败，请稍后重试");
+    }
   }
 
   /**
@@ -224,7 +296,7 @@ public class AuthServiceImpl implements AuthService {
    *   <li>4. 生成新的accessToken并更新Redis缓存</li>
    *   <li>5. 返回新的accessToken和可能更新的refreshToken</li>
    * </ul>
-   * 
+   *
    * @param refreshToken 刷新令牌
    * @return 刷新结果，成功时包含新的accessToken和更新后的refreshToken（如有更新）
    */
@@ -236,7 +308,7 @@ public class AuthServiceImpl implements AuthService {
     }
     
     // 获取refreshToken对应的用户ID
-    Object userIdObj = redisUtil.get(refreshToken);
+    Object userIdObj = redisUtils.get(refreshToken);
     if (userIdObj == null) {
       return Result.error(ResultCode.TOKEN_INVALID.getCode(), "无效的refreshToken");
     }
@@ -245,43 +317,43 @@ public class AuthServiceImpl implements AuthService {
     
     // 先从Redis中获取用户信息
     String userLoginInfoKey = redisConfig.getRedisKeyPrefix() + USER_LOGIN_INFO_KEY_PREFIX + userId;
-    Map<Object, Object> userInfoMap = redisUtil.hgetAll(userLoginInfoKey);
-    UserInfoDTO userInfoDTO = null;
+    Map<Object, Object> userInfoMap = redisUtils.hgetAll(userLoginInfoKey);
+    UserInfoVO userInfoVO = null;
     
     if (userInfoMap != null && !userInfoMap.isEmpty()) {
-      // 从Redis中构建UserInfoDTO
-      userInfoDTO = new UserInfoDTO();
-      userInfoDTO.setId(Long.valueOf(userInfoMap.get("id").toString()));
-      userInfoDTO.setUsername(userInfoMap.get("username").toString());
-      userInfoDTO.setEmail(userInfoMap.get("email") != null ? userInfoMap.get("email").toString() : null);
+      // 从Redis中构建UserInfoVO
+      userInfoVO = new UserInfoVO();
+      userInfoVO.setId(Long.valueOf(userInfoMap.get("id").toString()));
+      userInfoVO.setUsername(userInfoMap.get("username").toString());
+      userInfoVO.setEmail(userInfoMap.get("email") != null ? userInfoMap.get("email").toString() : null);
       // 解析角色列表
       if (userInfoMap.containsKey("roles")) {
-        userInfoDTO.setRoles(JSON.parseArray(userInfoMap.get("roles").toString(), String.class));
+        userInfoVO.setRoles(JSON.parseArray(userInfoMap.get("roles").toString(), String.class));
       }
     }
     
     // 如果Redis中没有用户信息，从数据库中获取
-    if (userInfoDTO == null) {
+    if (userInfoVO == null) {
       User user = userMapper.selectById(userId);
       if (user == null) {
         return Result.error(ResultCode.USER_NOT_EXIST.getCode(), "用户不存在");
       }
       
-      userInfoDTO = userMapper.getUserInfo(user.getUsername());
-      if (userInfoDTO == null) {
+      userInfoVO = userMapper.getUserInfo(user.getUsername());
+      if (userInfoVO == null) {
         return Result.error(ResultCode.USER_NOT_EXIST.getCode(), "用户信息获取失败");
       }
     }
     
     // 检查refreshToken的过期时间（秒）
-    long expireTime = redisUtil.getExpire(refreshToken);
+    long expireTime = redisUtils.getExpire(refreshToken);
     
     // 如果refreshToken已过期
     if (expireTime <= 0) {
       // 清理相关缓存
       String userRefreshMapKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + "user:" + userId;
-      redisUtil.delKey(refreshToken);
-      redisUtil.delKey(userRefreshMapKey);
+      redisUtils.delKey(refreshToken);
+      redisUtils.delKey(userRefreshMapKey);
       return Result.error(ResultCode.TOKEN_EXPIRED.getCode(), "refreshToken已过期，请重新登录");
     }
     
@@ -289,10 +361,7 @@ public class AuthServiceImpl implements AuthService {
     // 原始有效期是7天 = 7*24*60*60 = 604800秒
     long originalExpire = 60 * 60 * 24 * 7; // 7天
     long threshold = (long) (originalExpire * 0.3); // 30%的阈值
-    
-    // 新的refreshToken变量，默认为原token
-    String newRefreshToken = refreshToken;
-    
+
     // 如果剩余时间低于30%，需要更新refreshToken的过期时间
      if (expireTime < threshold) {
        // 计算新的过期时间，最长不超过30天
@@ -300,27 +369,28 @@ public class AuthServiceImpl implements AuthService {
        long newExpireTime = Math.min(60 * 60 * 24 * 30, expireTime * 2);
        
        // 更新现有refreshToken的过期时间
-       redisUtil.expire(refreshToken, newExpireTime);
+       redisUtils.expire(refreshToken, newExpireTime);
        
        // 同时更新用户-refreshToken映射的过期时间
        String userRefreshMapKey = redisConfig.getRedisKeyPrefix() + USER_REFRESH_KEY_PREFIX + "user:" + userId;
-       redisUtil.expire(userRefreshMapKey, newExpireTime);
+       redisUtils.expire(userRefreshMapKey, newExpireTime);
      }
     
     // 生成新的accessToken
     JWTUserVO jwtUserVO = new JWTUserVO();
-    jwtUserVO.setUserId(userInfoDTO.getId());
-    jwtUserVO.setRoles(userInfoDTO.getRoles());
+    jwtUserVO.setUserId(userInfoVO.getId());
+    jwtUserVO.setRoles(userInfoVO.getRoles());
     String newAccessToken = jwtUtils.generateAccessToken(jwtUserVO);
     
     // 更新Redis中的accessToken
     String userLoginKey = redisConfig.getRedisKeyPrefix() + USER_LOGIN_KEY_PREFIX + userId;
-    redisUtil.set(userLoginKey, newAccessToken);
+    redisUtils.set(userLoginKey, newAccessToken);
     
     // 构造响应信息
     Map<String, Object> result = new HashMap<>();
     result.put("accessToken", newAccessToken);
-    result.put("refreshToken", newRefreshToken);
+    // 新的refreshToken变量，默认为原token
+    result.put("refreshToken", refreshToken);
     
     return Result.success("令牌刷新成功", result);
   }
