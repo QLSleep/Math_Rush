@@ -13,4 +13,6 @@ public interface AuthService {
 
   Result<?> generateCaptcha();
 
+  Result<?> forgetPassword();
+
 }

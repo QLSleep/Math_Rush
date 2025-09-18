@@ -90,4 +90,48 @@
             updated_at = CURRENT_TIMESTAMP
         WHERE id = #{id}
     </update>
+
+    <!-- 获取用户密码信息用于密码修改 -->
+    <select id="getChangePwdDTO" resultType="com.example.msbackend.dto.ChangePwdDTO">
+        SELECT 
+            id as userId,
+            password
+        FROM sys_user
+        WHERE username = #{username}
+    </select>
+
+    <!-- 修改用户密码 -->
+    <update id="changePwd">
+        UPDATE sys_user
+        SET 
+            password = #{password},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{userId}
+    </update>
+
+    <!-- 获取用户密码信息用于用户注销 -->
+    <select id="getCancelUserDTO" resultType="com.example.msbackend.dto.CancelUserDTO">
+        SELECT 
+            id as userId,
+            password
+        FROM sys_user
+        WHERE username = #{username}
+    </select>
+
+    <!-- 设置用户状态（如注销） -->
+    <update id="setUserStatus">
+        UPDATE sys_user
+        SET 
+            status = #{status},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 物理删除用户 -->
+    <delete id="deleteUserById">
+        DELETE FROM sys_user
+        WHERE id = #{id}
+    </delete>
+    
+
 </mapper>

@@ -2,6 +2,8 @@ package com.example.msbackend.controller;
 
 import com.example.msbackend.entity.Result;
 import com.example.msbackend.service.UserService;
+import com.example.msbackend.vo.CancelUserVO;
+import com.example.msbackend.vo.ChangePwdVO;
 import com.example.msbackend.vo.ModifyUserInfoVO;
 import com.example.msbackend.vo.RegisterVO;
 import jakarta.annotation.Resource;
@@ -39,5 +41,21 @@ public class UserController {
   @PostMapping("/change-account")
   public Result<?> changeAccount(@RequestBody ModifyUserInfoVO modifyUserInfoVO) {
     return userService.changeAccount(modifyUserInfoVO);
+  }
+
+  
+  /**
+   * 修改用户密码接口
+   * @param changePwdVO 修改密码信息
+   * @return 修改结果
+   */
+  @PostMapping("/change-password")
+  public Result<?> changePassword(@RequestBody ChangePwdVO changePwdVO) {
+    return userService.changePassword(changePwdVO);
+  }
+
+  @PostMapping("/cancel-user")
+  public Result<?> cancelUser(@RequestBody CancelUserVO cancelUserVO) {
+    return userService.cancelUser(cancelUserVO);
   }
 }

@@ -7,6 +7,7 @@ import com.example.msbackend.entity.Result;
 import com.example.msbackend.entity.User;
 import com.example.msbackend.enums.ResultCode;
 import com.example.msbackend.enums.RoleNames;
+import com.example.msbackend.enums.UserStatus;
 import com.example.msbackend.mapper.UserMapper;
 import com.example.msbackend.service.AuthService;
 import com.example.msbackend.utils.BCryptUtils;
@@ -393,5 +394,10 @@ public class AuthServiceImpl implements AuthService {
     result.put("refreshToken", refreshToken);
     
     return Result.success("令牌刷新成功", result);
+  }
+  
+  @Override
+  public Result<?> forgetPassword() {
+    return Result.error(ResultCode.RESET_PASSWORD_NOT_SUPPORTED);
   }
 }

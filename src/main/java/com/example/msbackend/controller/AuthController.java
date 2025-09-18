@@ -61,4 +61,14 @@ public class AuthController {
   public Result<?> generateCaptcha() {
     return authService.generateCaptcha();
   }
+  
+  /**
+   * 处理密码找回请求
+   * 根据方案一，普通用户不提供密码找回功能，直接返回错误信息
+   * @return 操作结果
+   */
+  @PostMapping("/forget-password")
+  public Result<?> forgetPassword() {
+    return authService.forgetPassword();
+  }
 }

@@ -16,7 +16,9 @@ public enum ResultCode {
   TOKEN_INVALID(1007, "token无效"), // 新增
   TOKEN_EXPIRED(1008, "token已过期"), // 新增
   USER_NOT_EXIST(1009, "用户不存在"), // 新增
-  ADMIN_FORBIDDEN_LOGIN(1010, "管理员账号禁止登录普通用户页面"); // 新增
+  ADMIN_FORBIDDEN_LOGIN(1010, "管理员账号禁止登录普通用户页面"), // 新增
+  USER_PASSWORD_ERROR(1011, "密码错误"), // 新增
+  RESET_PASSWORD_NOT_SUPPORTED(1012, "普通用户不提供密码找回功能，请联系管理员"); // 新增
 
   private final int code;
   private final String message;

@@ -2,8 +2,10 @@ package com.example.msbackend.service.impl;
 
 import com.example.msbackend.config.RedisConfig;
 import com.example.msbackend.contant.AuthContant;
+import com.example.msbackend.dto.CancelUserDTO;
 import com.example.msbackend.dto.InsertUserDTO;
 import com.example.msbackend.dto.ModifyUserInfoDTO;
+import com.example.msbackend.dto.ChangePwdDTO;
 import com.example.msbackend.entity.Result;
 import com.example.msbackend.enums.ResultCode;
 import com.example.msbackend.enums.RoleNames;
@@ -13,13 +15,17 @@ import com.example.msbackend.mapper.UserRoleMapper;
 import com.example.msbackend.service.UserService;
 import com.example.msbackend.utils.BCryptUtils;
 import com.example.msbackend.utils.RedisUtils;
+import com.example.msbackend.vo.CancelUserVO;
+import com.example.msbackend.vo.ChangePwdVO;
 import com.example.msbackend.vo.ModifyUserInfoVO;
 import com.example.msbackend.vo.RegisterVO;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
+@Transactional(rollbackFor = Exception.class)
 public class UserServiceImpl implements UserService {
   
   @Resource
@@ -112,6 +118,161 @@ public class UserServiceImpl implements UserService {
       }
     } else {
       return Result.error(ResultCode.FAIL.getCode(), "注册失败，请稍后重试");
+    }
+  }
+
+  @Override
+  public Result<?> cancelUser(CancelUserVO cancelUserVO) {
+    String username = cancelUserVO.getUsername();
+    String password = cancelUserVO.getPassword();
+    String captcha = cancelUserVO.getCaptcha();
+    String captchaId = cancelUserVO.getCaptchaId();
+
+    // 验证参数是否为空
+    if (!StringUtils.hasText(username) || !StringUtils.hasText(password) ||
+        !StringUtils.hasText(captcha) || !StringUtils.hasText(captchaId)) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "信息不能为空");
+    }
+
+    // 校验验证码
+    String captchaKey = redisConfig.getRedisKeyPrefix() + AuthContant.CAPTCHA_KEY_PREFIX + captchaId;
+    String redisCaptcha = (String) redisUtils.get(captchaKey);
+    if (redisCaptcha == null || !redisCaptcha.equalsIgnoreCase(captcha)) {
+      return Result.error(ResultCode.USER_CAPTCHA_ERROR.getCode(), "验证码错误或已过期");
+    }
+
+    // 查询用户信息
+    CancelUserDTO cancelUserDTO = userMapper.getCancelUserDTO(username);
+    if (cancelUserDTO == null) {
+      return Result.error(ResultCode.USER_NOT_EXIST.getCode(), "用户不存在");
+    }
+
+    // 校验密码
+    boolean passwordMatch = BCryptUtils.matches(password, cancelUserDTO.getPassword());
+    if (!passwordMatch) {
+      return Result.error(ResultCode.USER_PASSWORD_ERROR.getCode(), "密码错误");
+    }
+
+    // 先删除用户角色关联记录
+    boolean deleteRolesResult = userRoleMapper.deleteUserRolesByUserId(cancelUserDTO.getUserId());
+    // 再删除用户记录
+    boolean cancelResult = userMapper.deleteUserById(cancelUserDTO.getUserId());
+    if (deleteRolesResult && cancelResult) {
+      redisUtils.delKey(captchaKey);
+
+      // 用户注销成功后，强制用户重新登录（清除用户的登录状态缓存）
+      Long userId = cancelUserDTO.getUserId();
+      String userLoginKey = redisConfig.getRedisKeyPrefix() + "user:login:" + userId;
+      String userLoginInfoKey = redisConfig.getRedisKeyPrefix() + "user:login:info:" + userId;
+      String userRefreshMapKey = redisConfig.getRedisKeyPrefix() + "user:refresh:user:" + userId;
+
+      // 获取并删除refreshToken
+      String oldRefreshJti = (String) redisUtils.get(userRefreshMapKey);
+      if (StringUtils.hasText(oldRefreshJti)) {
+        String oldRefreshKey = redisConfig.getRedisKeyPrefix() + "user:refresh:" + oldRefreshJti;
+        redisUtils.delKey(oldRefreshKey);
+      }
+
+      // 删除所有相关的登录状态信息
+      redisUtils.delKey(userLoginKey);
+      redisUtils.delKey(userLoginInfoKey);
+      redisUtils.delKey(userRefreshMapKey);
+
+      return Result.success("用户注销成功");
+    } else {
+      return Result.error(ResultCode.FAIL.getCode(), "用户注销失败，请稍后重试");
+    }
+  }
+
+  /**
+   * 修改用户密码服务
+   * <p>处理用户修改密码请求，采用双密码（旧密码和两遍新密码）+验证码服务进行安全保障</p>
+   * 
+   * @param changePwdVO 修改密码请求参数对象，包含用户名、当前密码、新密码、确认密码、验证码和验证码ID
+   * @return 修改结果对象，包含成功或失败信息
+   *         <ul>
+   *           <li>成功：Result.success()</li>
+   *           <li>失败：Result.error(code, message)，具体错误码和信息根据失败原因而定</li>
+   *         </ul>
+   */
+  @Override
+  public Result<?> changePassword(ChangePwdVO changePwdVO) {
+    String username = changePwdVO.getUsername();
+    String currentPwd = changePwdVO.getCurrentPwd();
+    String newPwd = changePwdVO.getNewPwd();
+    String confirmPwd = changePwdVO.getConfirmPwd();
+    String captcha = changePwdVO.getCaptcha();
+    String captchaId = changePwdVO.getCaptchaId();
+    
+    // 1. 验证参数是否为空
+    if (!StringUtils.hasText(username) || !StringUtils.hasText(currentPwd) || 
+        !StringUtils.hasText(newPwd) || !StringUtils.hasText(confirmPwd) || 
+        !StringUtils.hasText(captcha) || !StringUtils.hasText(captchaId)) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "修改密码信息不能为空");
+    }
+    
+    // 2. 验证两次新密码是否一致
+    if (!newPwd.equals(confirmPwd)) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "两次输入的新密码不一致");
+    }
+    
+    // 3. 验证验证码是否正确
+    String captchaKey = redisConfig.getRedisKeyPrefix() + AuthContant.CAPTCHA_KEY_PREFIX + captchaId;
+    String redisCaptcha = (String) redisUtils.get(captchaKey);
+    if (redisCaptcha == null || !redisCaptcha.equalsIgnoreCase(captcha)) {
+      return Result.error(ResultCode.USER_CAPTCHA_ERROR.getCode(), "验证码错误或已过期");
+    }
+    
+    // 4. 使用用户名查询用户信息（包含加密密码）
+    ChangePwdDTO userPwdDTO = userMapper.getChangePwdDTO(username);
+    if (userPwdDTO == null) {
+      return Result.error(ResultCode.USER_NOT_EXIST.getCode(), "用户不存在");
+    }
+    
+    // 5. 验证旧密码是否正确
+    boolean passwordMatch = BCryptUtils.matches(currentPwd, userPwdDTO.getPassword());
+    if (!passwordMatch) {
+      return Result.error(ResultCode.USER_PASSWORD_ERROR.getCode(), "当前密码错误");
+    }
+    
+    // 6. 对新密码进行加密
+    String encryptedNewPassword = BCryptUtils.encode(newPwd);
+    
+    // 7. 比对从数据库查询出来的旧密码和加密后的新密码，确保新密码与旧密码不同
+    passwordMatch = BCryptUtils.matches(newPwd, userPwdDTO.getPassword());
+    if (passwordMatch) {
+      return Result.error(ResultCode.PARAM_ERROR.getCode(), "新密码不能与旧密码相同");
+    }
+    
+    // 8. 直接使用旧的DTO设置新密码，不创建新的DTO对象
+    userPwdDTO.setPassword(encryptedNewPassword);
+    
+    boolean updateResult = userMapper.changePwd(userPwdDTO);
+    if (updateResult) {
+      // 9. 密码修改成功后删除验证码
+      redisUtils.delKey(captchaKey);
+      
+      // 10. 密码修改成功后，强制用户重新登录（清除用户的登录状态缓存）
+      Long userId = userPwdDTO.getUserId();
+      String userLoginKey = redisConfig.getRedisKeyPrefix() + "user:login:" + userId;
+      String userLoginInfoKey = redisConfig.getRedisKeyPrefix() + "user:login:info:" + userId;
+      String userRefreshMapKey = redisConfig.getRedisKeyPrefix() + "user:refresh:user:" + userId;
+      
+      // 获取并删除refreshToken
+      String oldRefreshJti = (String) redisUtils.get(userRefreshMapKey);
+      if (StringUtils.hasText(oldRefreshJti)) {
+        String oldRefreshKey = redisConfig.getRedisKeyPrefix() + "user:refresh:" + oldRefreshJti;
+        redisUtils.delKey(oldRefreshKey);
+      }
+      
+      // 删除所有相关的登录状态信息
+      redisUtils.delKey(userLoginKey);
+      redisUtils.delKey(userLoginInfoKey);
+      redisUtils.delKey(userRefreshMapKey);
+      
+      return Result.success("密码修改成功，请重新登录");
+    } else {
+      return Result.error(ResultCode.FAIL.getCode(), "密码修改失败，请稍后重试");
     }
   }
 

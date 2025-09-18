@@ -1,6 +1,8 @@
 package com.example.msbackend.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.example.msbackend.dto.CancelUserDTO;
+import com.example.msbackend.dto.ChangePwdDTO;
 import com.example.msbackend.dto.InsertUserDTO;
 import com.example.msbackend.dto.ModifyUserInfoDTO;
 import com.example.msbackend.entity.User;
@@ -57,4 +59,21 @@ public interface UserMapper extends BaseMapper<User> {
    * @return 更新是否成功
    */
   boolean updateUserInfo(ModifyUserInfoDTO updateUserDTO);
+
+  ChangePwdDTO getChangePwdDTO(@Param("username") String username);
+
+  boolean changePwd(ChangePwdDTO changePwdDTO);
+
+  CancelUserDTO getCancelUserDTO(@Param("username") String username);
+
+  boolean setUserStatus(@Param("id") Long userId, @Param("status") byte userStatus);
+  
+  /**
+   * 物理删除用户
+   * @param id 用户ID
+   * @return 删除是否成功
+   */
+  boolean deleteUserById(@Param("id") Long id);
+  
+
 }
